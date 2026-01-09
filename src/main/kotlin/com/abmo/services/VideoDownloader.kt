@@ -242,13 +242,23 @@ class VideoDownloader: KoinComponent {
     private fun generateSegmentTokens(simpleVideo: SimpleVideo?): Map<Int, String> {
         Logger.debug("Generating segment request tokens.")
         val fragmentList = mutableMapOf<Int, String>()
+        
+        Logger.info(">>> SEED PARA KEY DE STREAMING: ${simpleVideo?.size}")
         val encryptionKey = cryptoHelper.getKey(simpleVideo?.size)
+        Logger.info(">>> KEY GERADA (HEX): $encryptionKey")
+
         if (simpleVideo?.size != null) {
             val ranges = generateRanges(simpleVideo.size)
             ranges.forEachIndexed { index, _ ->
                 val path = "/mp4/${simpleVideo.md5_id}/${simpleVideo.resId}/${simpleVideo.size}/$FRAGMENT_SIZE_IN_BYTES/$index"
+                
+                if (index == 0) { // Logamos apenas o primeiro para não poluir
+                    Logger.info(">>> PATH ORIGINAL (SEGMENTO 0): $path")
+                }
+
                 val encryptedBody = cryptoHelper.encryptAESCTR(path, encryptionKey)
-                fragmentList[index] = doubleEncodeToBase64(encryptedBody)
+                val token = doubleEncodeToBase64(encryptedBody)
+                fragmentList[index] = token
             }
             Logger.debug("${fragmentList.size} request token generated")
             return fragmentList
@@ -261,14 +271,22 @@ class VideoDownloader: KoinComponent {
             .encodeToString(input.toByteArray(Charsets.ISO_8859_1))
             .replace("=", "")
 
-        return Base64.getEncoder()
+        val second = Base64.getEncoder()
             .encodeToString(first.toByteArray())
             .replace("=", "")
+            
+        return second
     }
 
-
     private suspend fun requestSegment(url: String, token: String, index: Int? = null): Flow<ByteArray> = flow {
+        if (index == 0) {
+            Logger.info(">>> URL FINAL INTERCEPTADA: $url")
+            Logger.info(">>> TOKEN FINAL INTERCEPTADO: $token")
+        }
+
         Logger.debug("[$index] Starting request to $url with token token: $token")
+        
+        // O restante do código permanece igual...
         val response = Unirest.get(url)
             .header("Referer", "https://abysscdn.com/")
             .asBinary()
