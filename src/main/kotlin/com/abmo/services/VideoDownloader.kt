@@ -240,32 +240,38 @@ class VideoDownloader: KoinComponent {
 
 
     private fun generateSegmentTokens(simpleVideo: SimpleVideo?): Map<Int, String> {
-        Logger.debug("Generating segment request tokens.")
-        val fragmentList = mutableMapOf<Int, String>()
+    Logger.debug("Generating segment request tokens.")
+    val fragmentList = mutableMapOf<Int, String>()
+    
+    // A chave continua sendo gerada pelo size (conforme o código original)
+    val encryptionKey = cryptoHelper.getKey(simpleVideo?.size)
+    
+    if (simpleVideo?.size != null) {
+        // --- INÍCIO DO PATCH ---
         
-        Logger.info(">>> SEED PARA KEY DE STREAMING: ${simpleVideo?.size}")
-        val encryptionKey = cryptoHelper.getKey(simpleVideo?.size)
-        Logger.info(">>> KEY GERADA (HEX): $encryptionKey")
+        // Em vez de gerar vários ranges (0..2MB, 2MB..4MB), 
+        // criamos apenas UM range que cobre o vídeo inteiro.
+        val fullVideoSize = simpleVideo.size
+        
+        // O segredo está aqui: FRAGMENT_SIZE_IN_BYTES agora é o tamanho total!
+        // E o index é 0 (o primeiro e único pedaço).
+        val path = "/mp4/${simpleVideo.md5_id}/${simpleVideo.resId}/$fullVideoSize/$fullVideoSize/0"
+        
+        Logger.info(">>> APLICANDO PATCH DE VIDEO INTEIRO")
+        Logger.debug("Path do Patch: $path")
 
-        if (simpleVideo?.size != null) {
-            val ranges = generateRanges(simpleVideo.size)
-            ranges.forEachIndexed { index, _ ->
-                val path = "/mp4/${simpleVideo.md5_id}/${simpleVideo.resId}/${simpleVideo.size}/$FRAGMENT_SIZE_IN_BYTES/$index"
-                
-                if (index == 0) { // Logamos apenas o primeiro para não poluir
-                    Logger.info(">>> PATH ORIGINAL (SEGMENTO 0): $path")
-                }
-
-                val encryptedBody = cryptoHelper.encryptAESCTR(path, encryptionKey)
-                val token = doubleEncodeToBase64(encryptedBody)
-                fragmentList[index] = token
-            }
-            Logger.debug("${fragmentList.size} request token generated")
-            return fragmentList
-        }
-        return emptyMap()
+        val encryptedBody = cryptoHelper.encryptAESCTR(path, encryptionKey)
+        
+        // O AbyssDownloader usa doubleEncode, mantemos isso para o link ser válido
+        fragmentList[0] = doubleEncodeToBase64(encryptedBody)
+        
+        // --- FIM DO PATCH ---
+        
+        Logger.debug("Token de vídeo completo gerado com sucesso")
+        return fragmentList
     }
-
+    return emptyMap()
+}
     private fun doubleEncodeToBase64(input: String): String {
         val first = Base64.getEncoder()
             .encodeToString(input.toByteArray(Charsets.ISO_8859_1))
